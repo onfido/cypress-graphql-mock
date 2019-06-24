@@ -120,7 +120,7 @@ Cypress.Commands.add(
               operationName,
               variables
             )
-          });
+          }).then((data: any) => new Response(JSON.stringify(data)));
         }
         return originalFetch(input, init);
       }
