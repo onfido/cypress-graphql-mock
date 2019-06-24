@@ -6,6 +6,7 @@ import {
   addMockFunctionsToSchema,
   IMocks
 } from "graphql-tools";
+import { fetchGraphQLSchema } from "./utils/graphql";
 
 interface MockGraphQLOptions<AllOperations extends Record<string, any>> {
   schema: string | string[] | IntrospectionQuery;
@@ -13,6 +14,7 @@ interface MockGraphQLOptions<AllOperations extends Record<string, any>> {
   mocks?: IMocks;
   endpoint?: string;
   operations?: Partial<AllOperations>;
+  fetchSchema?: boolean;
 }
 
 interface SetOperationsOpts<AllOperations> {
@@ -73,20 +75,29 @@ Cypress.Commands.add(
   <AllOperations extends Record<string, any>>(
     options: MockGraphQLOptions<AllOperations>
   ) => {
-    const { endpoint = "/graphql", operations = {}, mocks = {} } = options;
-
-    const schema = makeExecutableSchema({
-      typeDefs: schemaAsSDL(options.schema)
-    });
-
-    addMockFunctionsToSchema({
-      schema,
-      mocks
-    });
+    const {
+      endpoint = "/graphql",
+      operations = {},
+      mocks = {},
+      fetchSchema = false
+    } = options;
 
     let currentOps = operations;
 
-    cy.on("window:before:load", win => {
+    cy.on("window:before:load", async win => {
+      const introspectionSchemaResult = fetchSchema
+        ? await fetchGraphQLSchema(endpoint)
+        : options.schema;
+
+      const schema = makeExecutableSchema({
+        typeDefs: schemaAsSDL(introspectionSchemaResult)
+      });
+
+      addMockFunctionsToSchema({
+        schema,
+        mocks
+      });
+
       const originalFetch = win.fetch;
       function fetch(input: RequestInfo, init?: RequestInit) {
         if (typeof input !== "string") {
@@ -109,11 +120,11 @@ Cypress.Commands.add(
               operationName,
               variables
             )
-          }).then((data: any) => new Response(JSON.stringify(data)));
+          });
         }
         return originalFetch(input, init);
       }
-      cy.stub(win, "fetch", fetch).as("fetchStub");
+      cy.stub(win, "fetch", fetch).as("graphqlStub");
     });
     //
     cy.wrap({
